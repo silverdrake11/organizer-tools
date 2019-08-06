@@ -14,6 +14,42 @@ PROFILES_API = 'https://api.meetup.com/{}/members/{}'
 LOGIN_URL = 'https://secure.meetup.com/login/'
 
 
+class MeetupAPI:
+
+    def __init__(self, email, password):
+        self.session = requests.Session()
+
+        response = self.session.get(LOGIN_URL)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        login_token = soup.find('input', {'name': 'token'})['value']
+
+        login_data = {'email': email, 
+                'password':password,
+                'token':login_token,
+                'rememberme':'on', 
+                'submitButton':'Log in', 
+                'returnUri':'https://www.meetup.com/', 
+                'op':'login',
+                'apiAppClientId':''}
+
+        response = self.session.post(LOGIN_URL, data=login_data)
+
+        cookies = self.session.cookies.get_dict()
+        url = RSVPS_API.format(MEETUP_ID, EVENT_ID)
+        auth_token = cookies['MEETUP_CSRF']
+        self.auth_header = {'Csrf-Token': auth_token}
+
+    def get_rsvps(self, meetup_id, event_id):
+        url = RSVPS_API.format(MEETUP_ID, EVENT_ID)
+        response = self.session.get(url, headers=self.auth_header)
+        return response.json()
+
+    def get_profile(self, member_id):
+        url = PROFILES_API.format(MEETUP_ID, member_id)
+        response = self.session.get(url, headers=self.auth_header)
+        return response.json()
+
+
 def get_full_name(profile):
     display_name = profile['name'].strip().upper()
     name = display_name
@@ -36,41 +72,16 @@ def get_full_name(profile):
     return name
 
 
-session = requests.Session()
-
-response = session.get(LOGIN_URL)
-soup = BeautifulSoup(response.text, 'html.parser')
-login_token = soup.find('input', {'name': 'token'})['value']
-
-login_data = {'email': MEETUP_EMAIL, 
-        'password':MEETUP_PASSWORD,
-        'token':login_token,
-        'rememberme':'on', 
-        'submitButton':'Log in', 
-        'returnUri':'https://www.meetup.com/', 
-        'op':'login',
-        'apiAppClientId':''}
-response = session.post(LOGIN_URL, data=login_data)
-
-cookies = session.cookies.get_dict()
-url = RSVPS_API.format(MEETUP_ID, EVENT_ID)
-auth_token = cookies['MEETUP_CSRF']
-auth_header = {'Csrf-Token': auth_token}
-response = session.get(url, headers=auth_header)
-people = response.json()
+meetup = MeetupAPI(MEETUP_EMAIL, MEETUP_PASSWORD)
+people = meetup.get_rsvps(MEETUP_ID, EVENT_ID)
 
 rsvps = []
 for person in people:
     if person['response'] == 'yes': # They RSVPed
         member_id = person['member']['id']
-        url = PROFILES_API.format(MEETUP_ID, member_id)
-        response = session.get(url, headers=auth_header)
-        profile = response.json()
+        profile = meetup.get_profile(member_id)
         name = get_full_name(profile)
         rsvps.append(name)
 
 for idx, name in enumerate(sorted(rsvps), start=1):
     print(idx, name)
-
-
-
